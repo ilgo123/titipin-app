@@ -4,6 +4,7 @@ import { supabase } from './services/supabaseClient'
 import { useUserStore } from './store/useUserStore'
 import { Loader2, AlertTriangle } from 'lucide-react' // Tambah icon Alert
 import { Toaster } from 'react-hot-toast'
+import { App as CapacitorApp } from '@capacitor/app';
 
 import NotificationListener from './components/NotificationListener'
 
@@ -41,6 +42,34 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState(null) // Untuk nampilin error di layar
 
   useEffect(() => {
+    CapacitorApp.addListener('appUrlOpen', async (data) => {
+        console.log('App opened with URL:', data.url);
+
+        // Cek apakah ini balikan dari Google?
+        if (data.url.includes('google-auth')) {
+            // Ambil token dari URL
+            const splitUrl = data.url.split('#'); // Biasanya token ada setelah tanda pagar (#)
+            if (splitUrl.length > 1) {
+                const params = new URLSearchParams(splitUrl[1]);
+                const accessToken = params.get('access_token');
+                const refreshToken = params.get('refresh_token');
+
+                if (accessToken) {
+                    // Masukkan ke Supabase
+                    const { data: sessionData, error } = await supabase.auth.setSession({
+                        access_token: accessToken,
+                        refresh_token: refreshToken || '',
+                    });
+
+                    if (!error && sessionData.session) {
+                        setUser(sessionData.session.user);
+                        navigate('/'); // Pindah ke Home
+                    }
+                }
+            }
+        }
+    });
+
     const checkSession = async () => {
       console.log("1. Mulai Cek Session...") // CCTV
       try {
