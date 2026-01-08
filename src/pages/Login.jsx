@@ -47,7 +47,13 @@ export default function Login() {
     setLoading(true)
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: 'com.titipin.app://google-auth' }
+      options: { 
+        redirectTo: 'com.titipin.app://google-auth', 
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
+      }
     })
     if (error) {
         toast.error(error.message)
