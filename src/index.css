@@ -1,0 +1,25 @@
+/* Import Tailwind v4 */
+@import "tailwindcss";
+
+/* Custom Font & Theme */
+@theme {
+  --font-sans: 'Inter', sans-serif;
+  --color-primary: #10B981;    /* Emerald-500 */
+  --color-secondary: #064E3B;  /* Emerald-900 */
+  --color-dark: #0F172A;       /* Slate-900 */
+  --animate-bounce-slow: bounce 3s infinite;
+}
+
+/* Base Styles */
+body {
+  font-family: var(--font-sans);
+  background-color: #F8FAFC; /* Slate-50 */
+  color: var(--color-dark);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Hilangkan scrollbar jelek di mobile */
+::-webkit-scrollbar {
+  width: 0px;
+  background: transparent;
+}
