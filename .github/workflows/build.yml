@@ -13,18 +13,18 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # --- PERBAIKAN: PAKSA INSTALL NODE JS v22 ---
+      # 1. SETUP NODE JS v22 (Wajib buat Capacitor terbaru)
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      # --------------------------------------------
 
+      # 2. SETUP JAVA v21 (PERBAIKAN DI SINI: Upgrade 17 -> 21)
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
