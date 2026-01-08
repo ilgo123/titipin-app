@@ -2,17 +2,17 @@ import { useEffect, useState, lazy, Suspense } from 'react'
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from './services/supabaseClient'
 import { useUserStore } from './store/useUserStore'
-import { Loader2, AlertTriangle } from 'lucide-react' // Tambah icon Alert
+import { Loader2, AlertTriangle } from 'lucide-react'
 import { Toaster } from 'react-hot-toast'
-import { App as CapacitorApp } from '@capacitor/app';
 
+// --- IMPORT WAJIB UNTUK DEEP LINK ---
+import { App as CapacitorApp } from '@capacitor/app'
 import NotificationListener from './components/NotificationListener'
 
-// --- 1. IMPORT KOMPONEN UTAMA ---
+// --- LAZY IMPORTS ---
 import Login from './pages/Login'
 import ProtectedRoute from './components/ProtectedRoute'
 
-// --- 2. LAZY IMPORT ---
 const Home = lazy(() => import('./pages/Home'))
 const TravelerMarket = lazy(() => import('./pages/TravelerMarket'))
 const Activity = lazy(() => import('./pages/Activity'))
@@ -26,7 +26,7 @@ const Withdraw = lazy(() => import('./pages/Withdraw'))
 const TopUp = lazy(() => import('./pages/TopUp'))
 const Notification = lazy(() => import('./pages/Notifications'))
 
-// KOMPONEN LOADER DI LUAR (Agar tidak re-render error)
+// LOADER COMPONENT
 const PageLoader = () => (
   <div className="flex h-screen w-full items-center justify-center bg-gray-50">
       <Loader2 className="animate-spin text-slate-400" size={32} />
@@ -39,55 +39,85 @@ export default function App() {
   const { setUser, clearUser } = useUserStore()
   
   const [isAuthChecking, setIsAuthChecking] = useState(true)
-  const [errorMessage, setErrorMessage] = useState(null) // Untuk nampilin error di layar
+  const [errorMessage, setErrorMessage] = useState(null)
 
   useEffect(() => {
-    CapacitorApp.addListener('appUrlOpen', async (data) => {
-        console.log('App opened with URL:', data.url);
+    // --- 1. LISTENER KHUSUS GOOGLE LOGIN (DEEP LINK) ---
+    const setupDeepLinkListener = async () => {
+        CapacitorApp.addListener('appUrlOpen', async (data) => {
+            console.log('App opened with URL:', data.url);
+            
+            // Cek apakah URL dari Google Auth
+            if (data.url.includes('google-auth')) {
+                const splitUrl = data.url.split('#');
+                if (splitUrl.length > 1) {
+                    const params = new URLSearchParams(splitUrl[1]);
+                    const accessToken = params.get('access_token');
+                    const refreshToken = params.get('refresh_token');
 
-        // Cek apakah ini balikan dari Google?
-        if (data.url.includes('google-auth')) {
-            // Ambil token dari URL
-            const splitUrl = data.url.split('#'); // Biasanya token ada setelah tanda pagar (#)
-            if (splitUrl.length > 1) {
-                const params = new URLSearchParams(splitUrl[1]);
-                const accessToken = params.get('access_token');
-                const refreshToken = params.get('refresh_token');
+                    if (accessToken) {
+                        // A. Masukkan Token ke Supabase
+                        const { data: sessionData, error } = await supabase.auth.setSession({
+                            access_token: accessToken,
+                            refresh_token: refreshToken || '',
+                        });
 
-                if (accessToken) {
-                    // Masukkan ke Supabase
-                    const { data: sessionData, error } = await supabase.auth.setSession({
-                        access_token: accessToken,
-                        refresh_token: refreshToken || '',
-                    });
+                        if (error) {
+                            console.error("Gagal Set Session:", error);
+                            return;
+                        }
+                        
+                        // B. Ambil Data Profil (Saldo, Nama, dll)
+                        if (sessionData.session) {
+                            const userAuth = sessionData.session.user;
 
-                    if (!error && sessionData.session) {
-                        setUser(sessionData.session.user);
-                        navigate('/'); // Pindah ke Home
+                            const { data: profileData, error: profileError } = await supabase
+                                .from('profiles')
+                                .select('*')
+                                .eq('id', userAuth.id)
+                                .single();
+
+                            // FIX ERROR DISINI: Gunakan variabel profileError agar tidak warning
+                            if (profileError) {
+                                console.error("Gagal ambil profil saat login Google:", profileError);
+                            }
+
+                            if (profileData) {
+                                // Gabung data Auth + Profil
+                                setUser({ ...userAuth, ...profileData });
+                                console.log("Login Google Sukses & Profil Dimuat!");
+                            } else {
+                                setUser(userAuth);
+                            }
+
+                            // C. Pindah ke Home
+                            navigate('/'); 
+                        }
                     }
                 }
             }
-        }
-    });
+        });
+    };
 
+    setupDeepLinkListener();
+
+    // --- 2. CEK SESSION BIASA (SAAT APLIKASI DIBUKA MANUAL) ---
     const checkSession = async () => {
-      console.log("1. Mulai Cek Session...") // CCTV
+      console.log("1. Mulai Cek Session...")
       try {
-          // Kasih timeout manual (misal 10 detik gak ada respon, anggap error)
           const timeoutPromise = new Promise((_, reject) => 
               setTimeout(() => reject(new Error("Koneksi timeout (10s)")), 10000)
           );
 
-          // Balapan: Siapa cepat, Supabase atau Timeout?
           const { data } = await Promise.race([
               supabase.auth.getSession(),
               timeoutPromise
-          ]).catch(err => { throw err }); // Tangkap error timeout
+          ]).catch(err => { throw err });
 
-          console.log("2. Respon Supabase Diterima:", data) // CCTV
+          console.log("2. Respon Supabase Diterima:", data)
 
           if (data?.session) {
-            console.log("3. User ditemukan, ambil Profil...") // CCTV
+            console.log("3. User ditemukan, ambil Profil...")
             const { data: profile, error: profileError } = await supabase
               .from('profiles')
               .select('*')
@@ -95,35 +125,32 @@ export default function App() {
               .single()
             
             if (profileError) {
-                console.error("Gagal ambil profil:", profileError) // CCTV
-                // Tetap login meski profil gagal (fallback)
+                console.error("Gagal ambil profil:", profileError)
                 setUser({ ...data.session.user }) 
             } else {
                 setUser({ ...data.session.user, ...profile })
             }
           } else {
-            console.log("3. User tamu (belum login)") // CCTV
+            console.log("3. User tamu (belum login)")
             clearUser()
           }
 
       } catch (error) {
-          console.error("CRITICAL ERROR:", error) // CCTV
+          console.error("CRITICAL ERROR:", error)
           setErrorMessage(error.message || "Gagal memuat data")
           clearUser()
       } finally {
-          console.log("4. Loading selesai.") // CCTV
-          setIsAuthChecking(false) // <--- WAJIB JALAN APAPUN YANG TERJADI
+          setIsAuthChecking(false)
       }
     }
 
     checkSession()
 
-    // Listener Auth
+    // --- 3. AUTH STATE LISTENER ---
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("Auth Change Event:", event) // CCTV
       if (session) {
-         // Logic update user... (Simplified for stability)
-         setUser(session.user) 
+         // Logic update user sederhana jika auth berubah
+         // (Opsional: bisa fetch profile lagi disini kalau mau lebih ketat)
       } else {
         clearUser()
         if (location.pathname !== '/login') {
@@ -132,10 +159,12 @@ export default function App() {
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+        subscription.unsubscribe()
+        CapacitorApp.removeAllListeners(); // Bersihkan listener saat keluar
+    }
   }, [])
 
-  // TAMPILAN JIKA ERROR (Biar gak stuck putih)
   if (errorMessage) {
       return (
         <div className="flex h-screen w-full flex-col items-center justify-center bg-white p-6 text-center">
@@ -152,7 +181,6 @@ export default function App() {
       )
   }
 
-  // TAMPILAN LOADING AWAL
   if (isAuthChecking) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-white flex-col gap-3">
@@ -164,36 +192,8 @@ export default function App() {
 
   return (
     <Suspense fallback={<PageLoader />}>
-      <Toaster 
-          position="top-center"
-          reverseOrder={false}
-          toastOptions={{
-            style: {
-              borderRadius: '12px',
-              background: '#333',
-              color: '#fff',
-            },
-            success: {
-              style: {
-                background: '#10B981', // Hijau Emerald
-                color: 'white',
-              },
-              iconTheme: {
-                primary: 'white',
-                secondary: '#10B981',
-              },
-            },
-            error: {
-              style: {
-                background: '#EF4444', // Merah
-                color: 'white',
-              },
-            },
-          }}
-        />
-
+      <Toaster position="top-center" toastOptions={{ style: { background: '#333', color: '#fff' } }} />
       <NotificationListener />
-
         <Routes>
             <Route path="/login" element={<Login />} />
             
