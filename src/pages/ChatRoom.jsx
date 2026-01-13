@@ -26,6 +26,9 @@ export default function ChatRoom() {
   const [uploadStatus, setUploadStatus] = useState('') 
   const [showAttachMenu, setShowAttachMenu] = useState(false)
   
+  // STATE MODAL (YANG HILANG TADI)
+  const [showFinishModal, setShowFinishModal] = useState(false) // <--- SUDAH DITAMBAH
+
   const cameraInputRef = useRef(null)
   const galleryInputRef = useRef(null)
   const messagesEndRef = useRef(null)
@@ -97,7 +100,7 @@ export default function ChatRoom() {
     setShowAttachMenu(false)
   }
 
-  // --- 1. KOMPRESI KE ARRAY BUFFER (Sangat Stabil) ---
+  // --- 1. KOMPRESI KE ARRAY BUFFER ---
   const compressImageToArrayBuffer = (file) => {
     return new Promise((resolve, reject) => {
         const objectUrl = URL.createObjectURL(file)
@@ -105,11 +108,9 @@ export default function ChatRoom() {
         img.src = objectUrl
         
         img.onload = () => {
-            URL.revokeObjectURL(objectUrl) // Bebaskan memori segera!
+            URL.revokeObjectURL(objectUrl)
             
             const canvas = document.createElement('canvas')
-            
-            // RESOLUSI 500px (Sangat ringan, anti-crash)
             const MAX_WIDTH = 500
             let width = img.width
             let height = img.height
@@ -131,11 +132,9 @@ export default function ChatRoom() {
             const ctx = canvas.getContext('2d')
             ctx.drawImage(img, 0, 0, width, height)
             
-            // Ubah ke Blob -> Lalu ke ArrayBuffer
             canvas.toBlob(async (blob) => {
                 if (blob) {
                     try {
-                        // KUNCI STABILITAS: Konversi ke ArrayBuffer
                         const arrayBuffer = await blob.arrayBuffer()
                         resolve({ buffer: arrayBuffer, type: blob.type })
                     } catch (err) {
@@ -144,7 +143,7 @@ export default function ChatRoom() {
                 } else {
                     reject(new Error("Gagal kompresi"))
                 }
-            }, 'image/jpeg', 0.6) // Kualitas 60% cukup
+            }, 'image/jpeg', 0.6)
         }
         
         img.onerror = (err) => {
@@ -154,8 +153,7 @@ export default function ChatRoom() {
     })
   }
 
-  // --- 2. RETRY STRATEGY (Exponential Backoff) ---
-  // Jeda waktu makin lama: 1 detik, 3 detik, 5 detik.
+  // --- 2. RETRY STRATEGY ---
   const uploadWithBackoff = async (arrayBuffer, path, contentType, attempt = 1) => {
       try {
           const { error } = await supabase.storage
@@ -170,7 +168,7 @@ export default function ChatRoom() {
 
       } catch (error) {
           if (attempt <= 3) {
-              const delay = attempt * 2000 // 2s, 4s, 6s
+              const delay = attempt * 2000
               console.warn(`Gagal (Percobaan ${attempt}). Retry dalam ${delay/1000}s...`)
               setUploadStatus(`Sinyal putus. Mencoba lagi (${attempt}/3)...`)
               
@@ -188,7 +186,6 @@ export default function ChatRoom() {
         const file = e.target.files[0]
         if (!file) return
 
-        // Cek Koneksi Awal
         if (!navigator.onLine) {
             toast.error("Kamu sedang offline. Nyalakan internet dulu.")
             return
@@ -197,7 +194,6 @@ export default function ChatRoom() {
         setUploading(true)
         setUploadStatus('Memproses...') 
 
-        // 1. KOMPRESI JADI ARRAY BUFFER
         const { buffer, type } = await compressImageToArrayBuffer(file)
 
         setUploadStatus('Mengirim...') 
@@ -205,10 +201,8 @@ export default function ChatRoom() {
         const fileName = `${orderId}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}.jpg`
         const filePath = `${fileName}`
 
-        // 2. UPLOAD ARRAY BUFFER (Bukan File Object)
         await uploadWithBackoff(buffer, filePath, type)
 
-        // 3. SIMPAN KE DB
         const { data } = supabase.storage.from('chat-uploads').getPublicUrl(filePath)
 
         await supabase.from('messages').insert({
@@ -229,7 +223,6 @@ export default function ChatRoom() {
     }
   }
 
-  // --- (LOGIC ORDER LAINNYA SAMA) ---
   const updateOrderStatus = async (newStatus, customMessage) => {
     setIsSubmitting(true)
     const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', orderId)
@@ -237,20 +230,13 @@ export default function ChatRoom() {
     setIsSubmitting(false)
   }
 
-  // const completeOrder = async () => {
-  //   if(!confirm("Sudah terima barang?")) return;
-  //   setIsSubmitting(true)
-  //   await supabase.rpc('complete_order_transaction', { order_id_input: orderId })
-  //   setIsSubmitting(false)
-  // }
-
   // 1. Buka Modal
-const handleFinishClick = () => {
-    setShowFinishModal(true)
-}
+  const handleFinishClick = () => {
+    setShowFinishModal(true) // Ini sekarang sudah aman karena state-nya ada
+  }
 
-// 2. Eksekusi
-const onConfirmFinish = async () => {
+  // 2. Eksekusi
+  const onConfirmFinish = async () => {
     setShowFinishModal(false)
     const toastId = toast.loading('Menyelesaikan transaksi...')
     setIsSubmitting(true)
@@ -258,14 +244,13 @@ const onConfirmFinish = async () => {
     try {
         await supabase.rpc('complete_order_transaction', { order_id_input: orderId })
         toast.success("Transaksi Selesai! Terima kasih 🎉", { id: toastId })
-        // Refresh halaman/state jika perlu
         window.location.reload() 
     } catch(e) {
         toast.error('Gagal: ' + e.message, { id: toastId })
     } finally {
         setIsSubmitting(false)
     }
-}
+  }
 
   const submitReview = async () => {
     if (rating === 0) return toast.error("Bintangnya mana?")
@@ -420,6 +405,15 @@ const onConfirmFinish = async () => {
             </button>
         </form>
       </div>
+
+      {/* 👇👇 MODAL YANG TADI HILANG SUDAH DITAMBAHKAN 👇👇 */}
+      <ConfirmModal 
+        isOpen={showFinishModal}
+        onClose={() => setShowFinishModal(false)}
+        onConfirm={onConfirmFinish}
+        title="Terima Barang?"
+        message="Pastikan barang sudah kamu terima dengan baik. Dana akan diteruskan ke Traveler dan tidak bisa ditarik kembali."
+      />
     </div>
   )
 }
